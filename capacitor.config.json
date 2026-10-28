@@ -1,0 +1,8 @@
+{
+  "appId": "com.dzebertavage.roastlog",
+  "appName": "Roast Log",
+  "webDir": "www",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
+}

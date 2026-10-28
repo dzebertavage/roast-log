@@ -1,0 +1,24 @@
+{
+  "name": "roast-log",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Coffee roast timer and log: event times, bean temps, curve, history and spreadsheet export.",
+  "scripts": {
+    "build:web": "node scripts/copy-vendor.js"
+  },
+  "dependencies": {
+    "@capacitor-community/keep-awake": "^7.0.0",
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/filesystem": "^7.0.0",
+    "@capacitor/share": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0",
+    "@fontsource/dm-mono": "^5.0.0",
+    "@fontsource/figtree": "^5.0.0",
+    "xlsx": "0.18.5"
+  }
+}

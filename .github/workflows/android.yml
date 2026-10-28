@@ -1,0 +1,68 @@
+name: Build Android app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install packages
+        run: npm install
+
+      - name: Bundle libraries and fonts into the app
+        run: npm run build:web
+
+      - name: Create the Android project
+        run: npx cap add android
+
+      - name: Generate app icons
+        run: npx capacitor-assets generate --android
+        continue-on-error: true
+
+      - name: Copy the app into the Android project
+        run: npx cap sync android
+
+      - name: Set the app version
+        run: |
+          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"1.0.${{ github.run_number }}\"/" android/app/build.gradle
+
+      - name: Use the project's signing key (lets new builds install over old ones)
+        run: |
+          mkdir -p ~/.android
+          cp signing/debug.keystore ~/.android/debug.keystore
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk RoastLog-${{ github.run_number }}.apk
+
+      - name: Publish a release with the APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Roast Log build ${{ github.run_number }}
+          body: Download the .apk below on your phone and open it to install or update Roast Log.
+          files: RoastLog-${{ github.run_number }}.apk
+          make_latest: true

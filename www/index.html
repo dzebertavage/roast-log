@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#F5F4F2">
+<title>Roast Log</title>
+<style>
+@font-face { font-family: "Figtree"; font-weight: 400; font-display: swap; src: url("fonts/figtree-400.woff2") format("woff2"); }
+@font-face { font-family: "Figtree"; font-weight: 500; font-display: swap; src: url("fonts/figtree-500.woff2") format("woff2"); }
+@font-face { font-family: "Figtree"; font-weight: 600; font-display: swap; src: url("fonts/figtree-600.woff2") format("woff2"); }
+@font-face { font-family: "Figtree"; font-weight: 700; font-display: swap; src: url("fonts/figtree-700.woff2") format("woff2"); }
+@font-face { font-family: "DM Mono"; font-weight: 400; font-display: swap; src: url("fonts/dm-mono-400.woff2") format("woff2"); }
+@font-face { font-family: "DM Mono"; font-weight: 500; font-display: swap; src: url("fonts/dm-mono-500.woff2") format("woff2"); }
+/* Layout: one-screen app. Fixed header (timer always visible), scrolling log, fixed action bar, bottom-sheet numpad. */
+:root {
+  --bg: #F5F4F2;
+  --surface: #FFFFFF;
+  --line: #E3E0DB;
+  --chip: #EEEBE7;
+  --fg: #1C1A17;
+  --muted: #736D66;
+  --accent: #C4621A;
+  --accent-fg: #FFFFFF;
+  --accent-soft: #F7E4D4;
+  --danger: #B42318;
+  --scrim: rgba(20, 16, 12, 0.42);
+  --ui: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --num: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131210; --surface: #1C1A18; --line: #2F2C29; --chip: #292623;
+    --fg: #F2EEE9; --muted: #9C958D; --accent: #EA8840; --accent-fg: #1A0E04;
+    --accent-soft: #3B2716; --danger: #F97066; --scrim: rgba(0, 0, 0, 0.6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131210; --surface: #1C1A18; --line: #2F2C29; --chip: #292623;
+  --fg: #F2EEE9; --muted: #9C958D; --accent: #EA8840; --accent-fg: #1A0E04;
+  --accent-soft: #3B2716; --danger: #F97066; --scrim: rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html {
+  height: 100%; color-scheme: light;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+body {
+  height: 100%; margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--ui); font-size: 16px; line-height: 1.45;
+  -webkit-tap-highlight-color: transparent; overscroll-behavior: none;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gutter {
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 560px; margin-inline: auto; }
+
+.app { display: flex; flex-direction: column; height: 100%; }
+
+/* Header */
+.top { background: var(--bg); border-bottom: 1px solid var(--line); padding-block: 10px 14px; flex: none; }
+.top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { font-weight: 700; font-size: 15px; letter-spacing: 0.01em; }
+.tabs { display: flex; background: var(--chip); border-radius: 10px; padding: 3px; }
+.tab { border: 0; background: none; padding: 6px 14px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.tab[aria-selected="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.clock { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; margin-top: 6px; }
+.timer {
+  font-family: var(--num); font-weight: 500; font-variant-numeric: tabular-nums;
+  font-size: clamp(64px, 21vw, 104px); line-height: 1; letter-spacing: -0.05em;
+}
+.timer.idle { color: var(--muted); }
+.status { color: var(--muted); font-size: 15px; font-weight: 500; }
+.status b { color: var(--fg); font-weight: 600; }
+
+/* Main */
+main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.views { padding-block: 16px 24px; display: flex; flex-direction: column; gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; min-width: 0; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+h2 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 0; }
+.link { border: 0; background: none; padding: 6px 2px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.link.danger { color: var(--danger); }
+
+.empty { padding: 8px 2px; color: var(--muted); }
+.empty h3 { color: var(--fg); font-size: 20px; margin: 4px 0 8px; text-wrap: balance; }
+.empty p { margin: 0 0 8px; max-width: 46ch; }
+.empty b { color: var(--fg); }
+
+/* Log rows */
+.log { list-style: none; margin: 0; padding: 0; }
+.row {
+  display: grid; grid-template-columns: 1fr auto 84px; gap: 12px; align-items: baseline;
+  width: 100%; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line);
+  background: none; text-align: left; border-radius: 0;
+}
+.log li:last-child .row { border-bottom: 0; }
+.r-name { font-weight: 600; font-size: 17px; }
+.r-time { font-family: var(--num); color: var(--muted); font-size: 16px; text-align: right; }
+.r-temp { font-family: var(--num); font-size: 22px; font-weight: 500; text-align: right; }
+.r-temp small { font-size: 13px; color: var(--muted); margin-left: 2px; }
+.r-temp.blank { color: var(--muted); }
+button.row:active { background: var(--chip); }
+.row.flash { animation: flash 1.4s ease-out; }
+@keyframes flash { from { background: var(--accent-soft); } to { background: transparent; } }
+.hint { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
+
+/* Curve */
+.curve { width: 100%; height: auto; display: block; margin-top: 6px; }
+.c-grid { stroke: var(--line); stroke-width: 1; }
+.c-tick { fill: var(--muted); font-family: var(--num); font-size: 10px; }
+.c-area { fill: var(--accent-soft); stroke: none; }
+.c-line { fill: none; stroke: var(--accent); stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; }
+.c-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.c-pt { fill: var(--accent); }
+.c-lbl { fill: var(--fg); font-family: var(--ui); font-size: 11px; font-weight: 700; }
+
+/* Form */
+.form { display: grid; gap: 12px; margin-top: 8px; }
+.form .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: var(--muted); min-width: 0; }
+input, textarea {
+  width: 100%; font: inherit; font-size: 16px; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px;
+}
+textarea { min-height: 84px; resize: vertical; }
+input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* Stats */
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; margin-top: 8px; }
+.stats.three { grid-template-columns: 1.4fr 1fr 1fr; }
+.stats.three b { font-size: 19px; }
+
+/* Export */
+.x-text { color: var(--muted); font-size: 14px; margin: 4px 0 12px; max-width: 52ch; }
+.x-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn {
+  min-height: 50px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--fg); font-weight: 600; font-size: 15px; padding: 0 12px;
+}
+.btn:active { background: var(--chip); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.x-msg { font-size: 14px; margin: 10px 0 0; }
+.x-msg.err { color: var(--danger); }
+.stat span { display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.stat b { font-family: var(--num); font-weight: 500; font-size: 22px; }
+.stat i { font-style: normal; font-family: var(--num); font-size: 14px; color: var(--muted); margin-left: 6px; }
+
+/* History list */
+.hist { list-style: none; margin: 0; padding: 0; }
+.h-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; width: 100%;
+  padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left;
+}
+.hist li:last-child .h-row { border-bottom: 0; }
+.h-name { font-weight: 600; font-size: 17px; min-width: 0; overflow-wrap: anywhere; }
+.h-meta { grid-column: 1; color: var(--muted); font-size: 14px; }
+.h-time { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-family: var(--num); font-size: 20px; }
+.badge { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; background: var(--chip); color: var(--muted); padding: 2px 7px; border-radius: 6px; margin-left: 6px; vertical-align: 2px; }
+.d-title { font-size: 22px; font-weight: 700; margin: 0; text-wrap: balance; overflow-wrap: anywhere; }
+.d-sub { color: var(--muted); font-size: 14px; margin: 2px 0 0; }
+.notes { white-space: pre-wrap; margin: 6px 0 0; overflow-wrap: anywhere; }
+.back { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Action bar */
+.bar { flex: none; background: var(--bg); border-top: 1px solid var(--line); padding-block: 12px; }
+.primary {
+  width: 100%; min-height: 70px; border: 0; border-radius: 16px;
+  background: var(--accent); color: var(--accent-fg);
+  font-size: 23px; font-weight: 700; letter-spacing: 0.01em;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+}
+.primary small { font-size: 13px; font-weight: 600; opacity: 0.85; }
+.primary:active { filter: brightness(0.92); }
+
+/* Bottom sheet numpad */
+.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 20; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+  max-width: 560px; margin-inline: auto;
+  background: var(--surface); border-radius: 20px 20px 0 0;
+  padding-top: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -8px 30px rgba(0,0,0,.18);
+  display: flex; flex-direction: column; gap: 14px;
+}
+.sh-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.sh-title { font-size: 20px; font-weight: 700; }
+.sh-time { font-family: var(--num); color: var(--muted); font-size: 15px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { border: 0; background: var(--chip); padding: 9px 14px; border-radius: 999px; font-size: 15px; font-weight: 600; }
+.chip[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.chip:disabled { opacity: 0.4; text-decoration: line-through; cursor: default; }
+.readout { text-align: center; font-family: var(--num); font-size: 60px; font-weight: 500; line-height: 1.1; letter-spacing: -0.03em; }
+.readout .ph { color: var(--line); }
+.readout .unit { font-size: 22px; color: var(--muted); margin-left: 4px; letter-spacing: 0; }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.key { height: 62px; border: 0; border-radius: 12px; background: var(--chip); font-family: var(--num); font-size: 26px; font-weight: 500; }
+.key:active { filter: brightness(0.9); }
+.key.ok { background: var(--accent); color: var(--accent-fg); font-family: var(--ui); font-size: 19px; font-weight: 700; }
+.key.del { font-family: var(--ui); font-size: 22px; }
+
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 40;
+  bottom: calc(110px + env(safe-area-inset-bottom, 0px));
+  background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) { .row.flash { animation: none; } }
+</style>
+
+</head>
+<body>
+<div class="app">
+  <header class="top gutter">
+    <div class="wrap">
+      <div class="top-row">
+        <span class="brand">Roast Log</span>
+        <nav class="tabs" role="tablist" aria-label="Views">
+          <button id="tab-roast" class="tab" role="tab" aria-selected="true" data-tab="roast">Roast</button>
+          <button id="tab-history" class="tab" role="tab" aria-selected="false" data-tab="history">History</button>
+        </nav>
+      </div>
+      <div class="clock">
+        <div id="timer" class="timer idle" aria-live="off">0:00</div>
+        <div id="status" class="status">Ready to charge</div>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="gutter">
+    <div class="wrap views" id="view-roast"></div>
+    <div class="wrap views" id="view-history" hidden></div>
+  </main>
+
+  <footer class="bar gutter">
+    <div class="wrap" id="bar"></div>
+  </footer>
+</div>
+
+<div id="scrim" class="scrim" hidden data-act="sh-cancel"></div>
+<div id="sheet" class="sheet gutter" hidden role="dialog" aria-modal="true" aria-labelledby="sh-title">
+  <div class="sh-head">
+    <div>
+      <div id="sh-title" class="sh-title"></div>
+      <div id="sh-time" class="sh-time"></div>
+    </div>
+    <div>
+      <button id="sh-delete" class="link danger" data-act="sh-delete" hidden>Delete</button>
+      <button class="link" data-act="sh-cancel">Cancel</button>
+    </div>
+  </div>
+  <div id="sh-chips" class="chips"></div>
+  <div class="readout" aria-live="polite"><span id="sh-val"></span><span class="unit">°F</span></div>
+  <div class="pad">
+    <button class="key" data-key="1">1</button><button class="key" data-key="2">2</button><button class="key" data-key="3">3</button>
+    <button class="key" data-key="4">4</button><button class="key" data-key="5">5</button><button class="key" data-key="6">6</button>
+    <button class="key" data-key="7">7</button><button class="key" data-key="8">8</button><button class="key" data-key="9">9</button>
+    <button class="key del" data-key="del" aria-label="Delete digit">⌫</button><button class="key" data-key="0">0</button><button class="key ok" id="sh-ok" data-key="ok">Log</button>
+  </div>
+</div>
+<div id="toast" class="toast" hidden></div>
+<input type="file" id="f-merge" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" hidden>
+
+<script src="vendor/capacitor.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script>
+(function () {
+  const EVENTS = ['Charge', 'Turning Point', 'First Crack', 'Second Crack', 'Drop'];
+  const ABBR = { 'Charge': 'Charge', 'Turning Point': 'TP', 'First Crack': 'FC', 'Second Crack': 'SC', 'Drop': 'Drop' };
+  const K_ACTIVE = 'roastlog.active.v1', K_HIST = 'roastlog.history.v1';
+
+  function load(k, f) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch (e) { return f; } }
+  function save(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  const $ = (s) => document.querySelector(s);
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const fmt = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + pad2(s % 60); };
+  const ymd = (ms) => { const d = new Date(ms); return d.getFullYear() + '/' + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()); };
+  const hm = (ms) => { const d = new Date(ms); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); };
+  /* Date (YYYY/MM/DD) plus 24-hour clock times for Charge and Drop. Older saves without the fields are derived. */
+  function clocks(r) {
+    const drop = r.entries.find(e => e.name === 'Drop');
+    return {
+      date: r.date || ymd(r.startedAt),
+      charge: r.chargeClock || hm(r.startedAt),
+      drop: r.dropClock || (drop ? hm(r.startedAt + drop.t) : '')
+    };
+  }
+
+  const EXAMPLE = {
+    id: 'example', example: true,
+    startedAt: new Date(2026, 9, 20, 18, 30).getTime(),
+    bean: 'Ethiopia Guji', green: 250, roasted: 213,
+    notes: 'Sample roast to show how history looks. Your saved roasts replace it.',
+    entries: [
+      { id: 'e1', type: 'event', name: 'Charge', t: 0, temp: 405 },
+      { id: 'e2', type: 'event', name: 'Turning Point', t: 84000, temp: 198 },
+      { id: 'e3', type: 'event', name: 'First Crack', t: 532000, temp: 387 },
+      { id: 'e4', type: 'event', name: 'Drop', t: 641000, temp: 406 }
+    ]
+  };
+
+  const S = {
+    active: load(K_ACTIVE, null),
+    history: load(K_HIST, []),
+    tab: 'roast', detail: null, sheet: null, flashId: null
+  };
+
+  const sorted = (r) => r.entries.slice().sort((a, b) => a.t - b.t);
+  const find = (r, name) => r.entries.find(e => e.name === name);
+  const isEnded = () => !!(S.active && find(S.active, 'Drop'));
+  const nextEvent = () => S.active ? EVENTS.slice(1).find(n => !find(S.active, n)) : null;
+  const elapsed = () => {
+    if (!S.active) return 0;
+    const d = find(S.active, 'Drop');
+    return d ? d.t : Date.now() - S.active.startedAt;
+  };
+  const persistActive = () => save(K_ACTIVE, S.active);
+
+  /* Native (Android app) plugins. Each returns null when running in a plain browser. */
+  const isNative = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  function plugin(name) {
+    if (!isNative()) return null;
+    const C = window.Capacitor;
+    if (C.Plugins && C.Plugins[name]) return C.Plugins[name];
+    if (window.capacitorExports && window.capacitorExports.registerPlugin) return window.capacitorExports.registerPlugin(name);
+    if (C.registerPlugin) return C.registerPlugin(name);
+    return null;
+  }
+
+  /* Keep the screen on while roasting */
+  let wl = null;
+  async function wake() {
+    const ka = plugin('KeepAwake');
+    if (ka) { try { await ka.keepAwake(); return; } catch (e) {} }
+    try { if ('wakeLock' in navigator && !wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } } catch (e) {}
+  }
+  function sleep() {
+    const ka = plugin('KeepAwake');
+    if (ka) { try { ka.allowSleep(); } catch (e) {} }
+    try { wl && wl.release(); } catch (e) {} wl = null;
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && S.active && !isEnded()) wake();
+  });
+
+  /* Curve */
+  function curveSVG(entries) {
+    const pts = entries.filter(e => e.temp != null).sort((a, b) => a.t - b.t);
+    if (pts.length < 2) return '';
+    const W = 360, H = 210, L = 38, R = 14, T = 24, B = 24;
+    const tMax = Math.max(...pts.map(p => p.t), 60000);
+    const step = tMax > 12 * 60000 ? 2 : 1;
+    const xMax = Math.ceil(tMax / 60000 / step) * step;
+    const temps = pts.map(p => p.temp);
+    let lo = Math.min(...temps) - 15, hi = Math.max(...temps) + 20;
+    const yStep = (hi - lo) > 280 ? 100 : 50;
+    lo = Math.floor(lo / yStep) * yStep; hi = Math.ceil(hi / yStep) * yStep;
+    const x = (t) => L + (t / (xMax * 60000)) * (W - L - R);
+    const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+    let g = '';
+    for (let v = lo; v <= hi; v += yStep) {
+      g += `<line class="c-grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/>`;
+      g += `<text class="c-tick" x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end">${v}</text>`;
+    }
+    const nTicks = xMax / step, every = Math.ceil(nTicks / 7);
+    for (let i = 0; i <= nTicks; i += every) {
+      const m = i * step;
+      g += `<text class="c-tick" x="${x(m * 60000)}" y="${H - 6}" text-anchor="middle">${m}:00</text>`;
+    }
+    const line = pts.map((p, i) => (i ? 'L' : 'M') + x(p.t).toFixed(1) + ' ' + y(p.temp).toFixed(1)).join(' ');
+    const area = line + ` L${x(pts[pts.length - 1].t).toFixed(1)} ${H - B} L${x(pts[0].t).toFixed(1)} ${H - B} Z`;
+    let marks = '';
+    pts.forEach(p => {
+      const cx = x(p.t), cy = y(p.temp);
+      if (p.type === 'event') {
+        const below = p.name === 'Turning Point';
+        const anchor = cx < L + 24 ? 'start' : (cx > W - R - 24 ? 'end' : 'middle');
+        marks += `<circle class="c-dot" cx="${cx}" cy="${cy}" r="4.5"/>`;
+        marks += `<text class="c-lbl" x="${cx}" y="${below ? cy + 17 : cy - 9}" text-anchor="${anchor}">${ABBR[p.name] || esc(p.name)}</text>`;
+      } else {
+        marks += `<circle class="c-pt" cx="${cx}" cy="${cy}" r="2"/>`;
+      }
+    });
+    return `<svg class="curve" viewBox="0 0 ${W} ${H}" role="img" aria-label="Bean temperature over time">${g}<path class="c-area" d="${area}" opacity="0.6"/><path class="c-line" d="${line}"/>${marks}</svg>`;
+  }
+
+  function stats(r) {
+    const drop = find(r, 'Drop'), fc = find(r, 'First Crack');
+    const total = drop ? drop.t : null;
+    const dev = (drop && fc) ? drop.t - fc.t : null;
+    const loss = (r.green > 0 && r.roasted > 0) ? ((r.green - r.roasted) / r.green * 100) : null;
+    return { total, fc: fc ? fc.t : null, dev, devPct: dev != null && total ? dev / total * 100 : null, loss };
+  }
+
+  function rowHTML(e, editable) {
+    const tag = editable ? 'button' : 'div';
+    const temp = e.temp == null ? `<span class="r-temp blank">—</span>` : `<span class="r-temp">${e.temp}<small>°F</small></span>`;
+    const flash = e.id === S.flashId ? ' flash' : '';
+    return `<li><${tag} class="row${flash}" ${editable ? `data-edit="${e.id}"` : ''}><span class="r-name">${esc(e.name || 'Reading')}</span><span class="r-time">${fmt(e.t)}</span>${temp}</${tag}></li>`;
+  }
+
+  /* Render */
+  function renderHeader() {
+    const t = $('#timer'), st = $('#status');
+    t.textContent = fmt(elapsed());
+    t.classList.toggle('idle', !S.active);
+    if (!S.active) st.textContent = 'Ready to charge';
+    else if (isEnded()) st.innerHTML = '<b>Dropped</b> · save your roast';
+    else st.innerHTML = 'Next: <b>' + esc(nextEvent()) + '</b>';
+  }
+
+  function renderRoast() {
+    const v = $('#view-roast'), a = S.active;
+    if (!a) {
+      v.innerHTML = `<div class="card empty"><h3>Ready when you are</h3>
+        <p>Tap <b>Charge</b> as the beans go in. The timer starts and you enter the charge temp.</p>
+        <p>Then tap <b>Log</b> at turning point, first crack, second crack and drop.</p></div>`;
+      return;
+    }
+    const ended = isEnded();
+    const curve = curveSVG(a.entries);
+    const m = a.meta || {};
+    let html = `<section class="card"><div class="card-head"><h2>This roast</h2><button class="link danger" data-act="discard">Discard</button></div>
+      <ol class="log">${sorted(a).map(e => rowHTML(e, true)).join('')}</ol>
+      <p class="hint">Tap an entry to fix its temp.</p></section>`;
+    if (curve) html += `<section class="card"><div class="card-head"><h2>Curve</h2></div>${curve}</section>`;
+    if (ended) {
+      html += `<section class="card"><div class="card-head"><h2>Save roast</h2></div>
+        <form class="form" id="save-form" autocomplete="off">
+          <label for="f-bean">Bean<input id="f-bean" name="bean" placeholder="e.g. Colombia Huila" value="${esc(m.bean)}"></label>
+          <div class="two">
+            <label for="f-green">Green weight (g)<input id="f-green" name="green" inputmode="decimal" value="${esc(m.green)}"></label>
+            <label for="f-roasted">Roasted weight (g)<input id="f-roasted" name="roasted" inputmode="decimal" value="${esc(m.roasted)}"></label>
+          </div>
+          <label for="f-notes">Notes<textarea id="f-notes" name="notes" placeholder="Charge settings, heat changes, tasting notes">${esc(m.notes)}</textarea></label>
+        </form></section>`;
+    }
+    v.innerHTML = html;
+    S.flashId = null;
+  }
+
+  function renderHistory() {
+    const v = $('#view-history');
+    const list = S.history.length ? S.history : [EXAMPLE];
+    if (S.detail) {
+      const r = list.find(x => x.id === S.detail);
+      if (!r) { S.detail = null; return renderHistory(); }
+      const s = stats(r);
+      const c = clocks(r);
+      const dash = '—';
+      v.innerHTML = `<div><button class="link back" data-act="back">‹ All roasts</button></div>
+        <div><h1 class="d-title">${esc(r.bean || 'Untitled roast')}${r.example ? '<span class="badge">Example</span>' : ''}</h1>
+        ${r.green ? `<p class="d-sub">${r.green} g green → ${r.roasted || '?'} g roasted</p>` : ''}</div>
+        <section class="card"><div class="stats three">
+          <div class="stat"><span>Date</span><b>${c.date}</b></div>
+          <div class="stat"><span>Charge</span><b>${c.charge}</b></div>
+          <div class="stat"><span>Drop</span><b>${c.drop || dash}</b></div>
+        </div></section>
+        <section class="card"><div class="stats">
+          <div class="stat"><span>Total time</span><b>${s.total != null ? fmt(s.total) : dash}</b></div>
+          <div class="stat"><span>First crack</span><b>${s.fc != null ? fmt(s.fc) : dash}</b></div>
+          <div class="stat"><span>Development</span><b>${s.dev != null ? fmt(s.dev) : dash}</b>${s.devPct != null ? `<i>${s.devPct.toFixed(1)}%</i>` : ''}</div>
+          <div class="stat"><span>Weight loss</span><b>${s.loss != null ? s.loss.toFixed(1) + '%' : dash}</b></div>
+        </div></section>
+        ${curveSVG(r.entries) ? `<section class="card"><div class="card-head"><h2>Curve</h2></div>${curveSVG(r.entries)}</section>` : ''}
+        <section class="card"><div class="card-head"><h2>Log</h2></div><ol class="log">${sorted(r).map(e => rowHTML(e, false)).join('')}</ol></section>
+        ${r.notes ? `<section class="card"><div class="card-head"><h2>Notes</h2></div><p class="notes">${esc(r.notes)}</p></section>` : ''}
+        ${r.example ? '' : `<div><button class="link danger" data-act="delete-roast" data-id="${r.id}">Delete this roast</button></div>`}`;
+      return;
+    }
+    v.innerHTML = `<section class="card"><div class="card-head"><h2>Saved roasts</h2><span class="status">${S.history.length}</span></div>
+      <ol class="hist">${list.map(r => {
+        const s = stats(r), c = clocks(r);
+        const meta = [c.date, c.charge + (c.drop ? '–' + c.drop : ''),
+          s.loss != null ? s.loss.toFixed(1) + '% loss' : null].filter(Boolean).join(' · ');
+        return `<li><button class="h-row" data-open="${r.id}"><span class="h-name">${esc(r.bean || 'Untitled roast')}${r.example ? '<span class="badge">Example</span>' : ''}</span>
+          <span class="h-meta">${meta}</span><span class="h-time">${s.total != null ? fmt(s.total) : '—'}</span></button></li>`;
+      }).join('')}</ol></section>` + exportCard();
+  }
+
+  function exportCard() {
+    if (!S.dlKnown) return '';
+    const none = !S.history.length;
+    let body;
+    body = `<p class="x-text">${none ? 'Save a roast first, then export it here.' : 'Save all roasts as an .xlsx file, or pick a spreadsheet you already keep to add only the roasts it doesn\'t have yet.'}</p>
+      <div class="x-btns">
+        <button class="btn" data-act="x-new" ${none ? 'disabled' : ''}>New spreadsheet</button>
+        <button class="btn" data-act="x-merge" ${none ? 'disabled' : ''}>Add to existing</button>
+      </div>
+      <p class="x-text" style="margin-top:14px">Moving from another copy of Roast Log? Import a spreadsheet it exported to bring those roasts into your history.</p>
+      <div class="x-btns"><button class="btn" data-act="x-import">Import roasts</button></div>`;
+    const msg = S.xmsg ? `<p class="x-msg${S.xmsg.err ? ' err' : ''}">${esc(S.xmsg.text)}</p>` : '';
+    return `<section class="card"><div class="card-head"><h2>Spreadsheet</h2></div>${body}${msg}</section>`;
+  }
+
+  /* Spreadsheet export. One row per roast; "Roast ID" is how duplicates are spotted. */
+  const COLS = ['Roast ID', 'Date', 'Charge time', 'Drop time', 'Bean', 'Green (g)', 'Roasted (g)', 'Weight loss %',
+    'Total time', 'Charge °F', 'Turning Point', 'Turning Point °F', 'First Crack', 'First Crack °F',
+    'Second Crack', 'Second Crack °F', 'Drop °F', 'Development', 'Development %', 'Notes'];
+  function rowObj(r) {
+    const c = clocks(r), s = stats(r);
+    const ev = (n) => r.entries.find(e => e.name === n);
+    const t = (n) => ev(n) ? fmt(ev(n).t) : '';
+    const tp = (n) => ev(n) && ev(n).temp != null ? ev(n).temp : '';
+    return {
+      'Roast ID': r.id, 'Date': c.date, 'Charge time': c.charge, 'Drop time': c.drop,
+      'Bean': r.bean || '', 'Green (g)': r.green ?? '', 'Roasted (g)': r.roasted ?? '',
+      'Weight loss %': s.loss != null ? +s.loss.toFixed(1) : '', 'Total time': s.total != null ? fmt(s.total) : '',
+      'Charge °F': tp('Charge'), 'Turning Point': t('Turning Point'), 'Turning Point °F': tp('Turning Point'),
+      'First Crack': t('First Crack'), 'First Crack °F': tp('First Crack'),
+      'Second Crack': t('Second Crack'), 'Second Crack °F': tp('Second Crack'), 'Drop °F': tp('Drop'),
+      'Development': s.dev != null ? fmt(s.dev) : '', 'Development %': s.devPct != null ? +s.devPct.toFixed(1) : '',
+      'Notes': r.notes || ''
+    };
+  }
+  const chrono = () => S.history.slice().sort((a, b) => a.startedAt - b.startedAt);
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  function setMsg(text, err) { S.xmsg = text ? { text, err: !!err } : null; renderHistory(); }
+
+  /* Save the workbook. In the Android app it goes to Documents/RoastLog and the share sheet opens
+     so it can also be sent to Drive, email, etc. In a browser it downloads. Returns where it went, or null. */
+  async function offer(filename, wb) {
+    const Filesystem = plugin('Filesystem'), Share = plugin('Share');
+    if (Filesystem) {
+      const data = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
+      let res = null, where = '';
+      try {
+        try { await Filesystem.requestPermissions(); } catch (e) {}
+        res = await Filesystem.writeFile({ path: 'RoastLog/' + filename, data, directory: 'DOCUMENTS', recursive: true });
+        where = 'Documents/RoastLog/' + filename;
+      } catch (e) {
+        try { res = await Filesystem.writeFile({ path: filename, data, directory: 'CACHE', recursive: true }); }
+        catch (e2) { setMsg('The file couldn\'t be saved. Check that the app has storage access, then try again.', true); return null; }
+      }
+      if (Share) { try { await Share.share({ title: filename, files: [res.uri] }); } catch (e) {} }
+      return where || 'the share sheet';
+    }
+    try {
+      XLSX.writeFile(wb, filename);
+      return 'your downloads';
+    } catch (e) { setMsg('The file couldn\'t be saved.', true); return null; }
+  }
+
+  async function exportNew() {
+    if (typeof XLSX === 'undefined') return setMsg('The spreadsheet tool didn\'t load. Check your connection and reload.', true);
+    const rows = chrono().map(rowObj);
+    const ws = XLSX.utils.aoa_to_sheet([COLS, ...rows.map(o => COLS.map(h => o[h]))]);
+    ws['!cols'] = COLS.map(h => ({ wch: h === 'Notes' ? 40 : Math.max(11, h.length + 2) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Roasts');
+    const where = await offer('roast-log-' + ymd(Date.now()).replace(/\//g, '-') + '.xlsx', wb);
+    if (where) setMsg('Exported ' + plural(rows.length, 'roast') + ' to ' + where + '.');
+  }
+
+  async function mergeInto(file) {
+    if (typeof XLSX === 'undefined') return setMsg('The spreadsheet tool didn\'t load. Check your connection and reload.', true);
+    let wb;
+    try { wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }); }
+    catch (e) { return setMsg('That file couldn\'t be opened. Pick an .xlsx or .csv spreadsheet.', true); }
+    const name = wb.SheetNames[0];
+    let ws = wb.Sheets[name];
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+    const header = aoa.length ? aoa[0].map(h => String(h).trim()) : [];
+    const idCol = header.indexOf('Roast ID'), dCol = header.indexOf('Date'), cCol = header.indexOf('Charge time');
+    if (aoa.length && idCol < 0 && (dCol < 0 || cCol < 0)) {
+      return setMsg('The first sheet has no "Roast ID" column (or "Date" and "Charge time" columns), so there\'s no way to tell which roasts it already has. Pick a sheet this app exported.', true);
+    }
+    const ids = new Set(), keys = new Set();
+    aoa.slice(1).forEach(row => {
+      if (idCol >= 0 && row[idCol] !== '') ids.add(String(row[idCol]).trim());
+      if (dCol >= 0 && cCol >= 0 && row[dCol] !== '') keys.add(String(row[dCol]).trim() + ' ' + String(row[cCol]).trim());
+    });
+    const all = chrono();
+    const fresh = all.filter(r => { const c = clocks(r); return !ids.has(r.id) && !keys.has(c.date + ' ' + c.charge); });
+    if (!fresh.length) return setMsg('All ' + plural(all.length, 'saved roast') + ' are already in ' + file.name + '. Nothing to add.');
+    const cols = header.length ? header.slice() : [];
+    COLS.forEach(h => { if (!cols.includes(h)) cols.push(h); });
+    if (!ws) { ws = XLSX.utils.aoa_to_sheet([]); wb.Sheets[name || 'Roasts'] = ws; if (!name) wb.SheetNames.push('Roasts'); }
+    XLSX.utils.sheet_add_aoa(ws, [cols], { origin: 'A1' });
+    XLSX.utils.sheet_add_aoa(ws, fresh.map(r => { const o = rowObj(r); return cols.map(h => o[h] ?? ''); }), { origin: aoa.length ? -1 : 'A2' });
+    const out = file.name.replace(/\.(xlsx|xls|csv)$/i, '') + '.xlsx';
+    const skipped = all.length - fresh.length;
+    const where = await offer(out, wb);
+    if (where) setMsg('Added ' + plural(fresh.length, 'new roast') + (skipped ? ', skipped ' + skipped + ' already in the sheet' : '') + '. Saved to ' + where + '.');
+  }
+
+  /* Import roasts from a spreadsheet this app exported. Skips any roast already in history. */
+  function cellDate(v) {
+    if (typeof v === 'number') { const d = XLSX.SSF.parse_date_code(v); return d ? [d.y, d.m, d.d] : null; }
+    const m = String(v).match(/(\d{4})\D(\d{1,2})\D(\d{1,2})/);
+    return m ? [+m[1], +m[2], +m[3]] : null;
+  }
+  function cellClock(v) { // "HH:MM" (or a spreadsheet time value) -> [h, m]
+    if (typeof v === 'number') { const mins = Math.round((v % 1) * 1440); return [Math.floor(mins / 60), mins % 60]; }
+    const m = String(v).match(/(\d{1,2}):(\d{2})/);
+    return m ? [+m[1], +m[2]] : null;
+  }
+  function cellElapsed(v) { // "m:ss" (or a value a spreadsheet turned into a time) -> ms
+    if (v === '' || v == null) return null;
+    if (typeof v === 'number') return Math.round((v % 1) * 1440) * 1000;
+    const m = String(v).match(/(\d+):(\d{2})/);
+    return m ? (+m[1] * 60 + +m[2]) * 1000 : null;
+  }
+  const cellNum = (v) => { const n = parseFloat(v); return isFinite(n) ? n : null; };
+
+  async function importFrom(file) {
+    if (typeof XLSX === 'undefined') return setMsg('The spreadsheet tool didn\'t load. Restart the app and try again.', true);
+    let wb;
+    try { wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }); }
+    catch (e) { return setMsg('That file couldn\'t be opened. Pick an .xlsx or .csv spreadsheet.', true); }
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { raw: true, defval: '' });
+    if (!rows.length || !('Date' in rows[0]) || !('Charge time' in rows[0])) {
+      return setMsg('That sheet doesn\'t look like a Roast Log export. It needs "Date" and "Charge time" columns.', true);
+    }
+    const ids = new Set(S.history.map(r => r.id));
+    const keys = new Set(S.history.map(r => { const c = clocks(r); return c.date + ' ' + c.charge; }));
+    let added = 0, skipped = 0, bad = 0;
+    rows.forEach(row => {
+      const d = cellDate(row['Date']), c = cellClock(row['Charge time']);
+      if (!d || !c) { bad++; return; }
+      const startedAt = new Date(d[0], d[1] - 1, d[2], c[0], c[1]).getTime();
+      const id = String(row['Roast ID'] || '').trim() || ('imp' + startedAt.toString(36));
+      const date = d[0] + '/' + pad2(d[1]) + '/' + pad2(d[2]), chargeClock = pad2(c[0]) + ':' + pad2(c[1]);
+      if (ids.has(id) || keys.has(date + ' ' + chargeClock)) { skipped++; return; }
+      const entries = [{ id: uid(), type: 'event', name: 'Charge', t: 0, temp: cellNum(row['Charge °F']) }];
+      ['Turning Point', 'First Crack', 'Second Crack'].forEach(n => {
+        const t = cellElapsed(row[n]);
+        if (t != null) entries.push({ id: uid(), type: 'event', name: n, t, temp: cellNum(row[n + ' °F']) });
+      });
+      const total = cellElapsed(row['Total time']);
+      if (total != null) entries.push({ id: uid(), type: 'event', name: 'Drop', t: total, temp: cellNum(row['Drop °F']) });
+      const dc = cellClock(row['Drop time']);
+      S.history.push({
+        id, startedAt, entries, date, chargeClock,
+        dropClock: dc ? pad2(dc[0]) + ':' + pad2(dc[1]) : (total != null ? hm(startedAt + total) : ''),
+        bean: String(row['Bean'] || '').trim(), green: cellNum(row['Green (g)']), roasted: cellNum(row['Roasted (g)']),
+        notes: String(row['Notes'] || '').trim(), savedAt: Date.now(), imported: true
+      });
+      ids.add(id); keys.add(date + ' ' + chargeClock); added++;
+    });
+    S.history.sort((a, b) => b.startedAt - a.startedAt);
+    save(K_HIST, S.history);
+    setMsg('Imported ' + plural(added, 'roast') + (skipped ? ', skipped ' + skipped + ' already in your history' : '') +
+      (bad ? ', ignored ' + plural(bad, 'row') + ' without a date and charge time' : '') + '.');
+  }
+
+  S.dlKnown = true;
+  let fileMode = 'merge';
+  $('#f-merge').addEventListener('change', (ev) => {
+    const f = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    if (!f) return;
+    setMsg('Checking ' + f.name + '…');
+    fileMode === 'import' ? importFrom(f) : mergeInto(f);
+  });
+
+  /* Android back button: close the numpad, leave a roast's details, then go back to the Roast tab. */
+  const AppPlugin = plugin('App');
+  if (AppPlugin) {
+    try {
+      AppPlugin.addListener('backButton', () => {
+        if (S.sheet) closeSheet();
+        else if (S.tab === 'history' && S.detail) { S.detail = null; renderHistory(); }
+        else if (S.tab === 'history') { S.tab = 'roast'; renderTabs(); }
+        else AppPlugin.minimizeApp();
+      });
+    } catch (e) {}
+  }
+
+  function renderBar() {
+    const b = $('#bar');
+    if (!S.active) b.innerHTML = `<button class="primary" data-act="charge">Charge</button>`;
+    else if (isEnded()) b.innerHTML = `<button class="primary" data-act="save">Save roast</button>`;
+    else b.innerHTML = `<button class="primary" data-act="log">Log<small>Next: ${esc(nextEvent())}</small></button>`;
+  }
+
+  function renderTabs() {
+    ['roast', 'history'].forEach(t => {
+      $('#tab-' + t).setAttribute('aria-selected', String(S.tab === t));
+      $('#view-' + t).hidden = S.tab !== t;
+    });
+  }
+
+  function render() { renderTabs(); renderHeader(); renderRoast(); renderHistory(); renderBar(); }
+
+  /* Sheet */
+  function openSheet(sh) { S.sheet = sh; renderSheet(); $('#sheet').hidden = false; $('#scrim').hidden = false; }
+  function closeSheet() { S.sheet = null; $('#sheet').hidden = true; $('#scrim').hidden = true; }
+  function renderSheet() {
+    const sh = S.sheet; if (!sh) return;
+    $('#sh-title').textContent = sh.name;
+    $('#sh-time').textContent = 'at ' + fmt(sh.t);
+    $('#sh-val').innerHTML = sh.val ? esc(sh.val) : '<span class="ph">000</span>';
+    $('#sh-ok').textContent = sh.mode === 'new' ? 'Log' : 'Done';
+    $('#sh-delete').hidden = !(sh.mode === 'edit' && sh.name !== 'Charge');
+    const chips = $('#sh-chips');
+    if (sh.mode === 'new') {
+      chips.hidden = false;
+      chips.innerHTML = EVENTS.slice(1).map(n => {
+        const done = !!find(S.active, n);
+        return `<button class="chip" data-chip="${n}" aria-pressed="${n === sh.name}" ${done ? 'disabled' : ''}>${n}</button>`;
+      }).join('');
+    } else { chips.hidden = true; chips.innerHTML = ''; }
+  }
+  function pressKey(k) {
+    const sh = S.sheet; if (!sh) return;
+    if (k === 'del') sh.val = sh.val.slice(0, -1);
+    else if (k === 'ok') return commit();
+    else if (/^\d$/.test(k)) { if (sh.val.length < 3 && !(sh.val === '' && k === '0')) sh.val += k; }
+    renderSheet();
+  }
+  function commit() {
+    const sh = S.sheet, a = S.active; if (!sh || !a) return closeSheet();
+    const temp = sh.val ? parseInt(sh.val, 10) : null;
+    if (sh.mode === 'new') {
+      const e = { id: uid(), type: 'event', name: sh.name, t: sh.t, temp };
+      a.entries.push(e); S.flashId = e.id;
+      if (sh.name === 'Drop') sleep();
+    } else {
+      const e = a.entries.find(x => x.id === sh.id); if (e) { e.temp = temp; S.flashId = e.id; }
+    }
+    persistActive(); closeSheet(); S.tab = 'roast'; render();
+    requestAnimationFrame(() => { const el = document.querySelector('.row.flash'); el && el.scrollIntoView({ block: 'nearest' }); });
+  }
+
+  /* Two-tap confirm (the viewer has no confirm dialogs) */
+  function arm(btn, label, action) {
+    if (btn.dataset.armed) { action(); return; }
+    const orig = btn.textContent; btn.dataset.armed = '1'; btn.textContent = label;
+    setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = orig; } }, 3000);
+  }
+
+  let toastT;
+  function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2200); }
+
+  /* Actions */
+  document.addEventListener('click', (ev) => {
+    const el = ev.target.closest('[data-act],[data-tab],[data-key],[data-chip],[data-edit],[data-open]');
+    if (!el) return;
+    if (el.dataset.tab) { S.tab = el.dataset.tab; if (S.tab === 'history') S.detail = null; renderTabs(); renderHistory(); return; }
+    if (el.dataset.key) return pressKey(el.dataset.key);
+    if (el.dataset.chip) { S.sheet.name = el.dataset.chip; renderSheet(); return; }
+    if (el.dataset.edit) {
+      const e = S.active.entries.find(x => x.id === el.dataset.edit);
+      if (e) openSheet({ mode: 'edit', id: e.id, name: e.name, t: e.t, val: e.temp == null ? '' : String(e.temp) });
+      return;
+    }
+    if (el.dataset.open) { S.detail = el.dataset.open; renderHistory(); $('#main').scrollTop = 0; return; }
+    const act = el.dataset.act;
+    if (act === 'charge') {
+      const c = { id: uid(), type: 'event', name: 'Charge', t: 0, temp: null };
+      S.active = { id: uid(), startedAt: Date.now(), entries: [c], meta: {} };
+      persistActive(); wake(); S.tab = 'roast'; render();
+      openSheet({ mode: 'edit', id: c.id, name: 'Charge', t: 0, val: '' });
+    } else if (act === 'log') {
+      const t = elapsed();
+      openSheet({ mode: 'new', name: nextEvent(), t, val: '' });
+    } else if (act === 'sh-cancel') {
+      closeSheet();
+    } else if (act === 'sh-delete') {
+      arm(el, 'Tap to confirm', () => {
+        const wasDrop = S.sheet.name === 'Drop';
+        S.active.entries = S.active.entries.filter(x => x.id !== S.sheet.id);
+        persistActive(); closeSheet(); if (wasDrop) wake(); render();
+      });
+    } else if (act === 'discard') {
+      arm(el, 'Tap again to discard', () => { S.active = null; persistActive(); sleep(); render(); toast('Roast discarded'); });
+    } else if (act === 'save') {
+      const a = S.active, m = a.meta || {};
+      const num = (v) => { const n = parseFloat(v); return isFinite(n) && n > 0 ? n : null; };
+      const drop = find(a, 'Drop');
+      const roast = { id: a.id, startedAt: a.startedAt, entries: sorted(a), bean: (m.bean || '').trim(),
+        date: ymd(a.startedAt), chargeClock: hm(a.startedAt), dropClock: drop ? hm(a.startedAt + drop.t) : '',
+        green: num(m.green), roasted: num(m.roasted), notes: (m.notes || '').trim(), savedAt: Date.now() };
+      S.history.unshift(roast); save(K_HIST, S.history);
+      S.active = null; persistActive(); sleep();
+      S.tab = 'history'; S.detail = roast.id; render(); $('#main').scrollTop = 0; toast('Roast saved');
+    } else if (act === 'x-new') {
+      S.xmsg = null; exportNew();
+    } else if (act === 'x-merge') {
+      S.xmsg = null; fileMode = 'merge'; $('#f-merge').click();
+    } else if (act === 'x-import') {
+      S.xmsg = null; fileMode = 'import'; $('#f-merge').click();
+    } else if (act === 'back') {
+      S.detail = null; renderHistory();
+    } else if (act === 'delete-roast') {
+      arm(el, 'Tap again to delete', () => {
+        S.history = S.history.filter(r => r.id !== el.dataset.id); save(K_HIST, S.history);
+        S.detail = null; renderHistory(); toast('Roast deleted');
+      });
+    }
+  });
+
+  document.addEventListener('input', (ev) => {
+    const f = ev.target.closest('#save-form'); if (!f || !S.active) return;
+    S.active.meta = S.active.meta || {};
+    S.active.meta[ev.target.name] = ev.target.value;
+    persistActive();
+  });
+  document.addEventListener('submit', (ev) => ev.preventDefault());
+
+  document.addEventListener('keydown', (ev) => {
+    if (!S.sheet) return;
+    if (/^\d$/.test(ev.key)) { pressKey(ev.key); ev.preventDefault(); }
+    else if (ev.key === 'Backspace') { pressKey('del'); ev.preventDefault(); }
+    else if (ev.key === 'Enter') { pressKey('ok'); ev.preventDefault(); }
+    else if (ev.key === 'Escape') closeSheet();
+  });
+
+  setInterval(() => { if (S.active && !isEnded()) $('#timer').textContent = fmt(elapsed()); }, 250);
+  if (S.active && !isEnded()) wake();
+  render();
+})();
+</script>
+
+</body>
+</html>
